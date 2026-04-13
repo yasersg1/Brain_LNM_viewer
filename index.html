@@ -195,8 +195,8 @@
 
 <!-- Top bar -->
 <div id="topbar">
-  <span class="title">Yaser SG</span>
-  <span class="subtitle">Lesion Network Mapping — Connectivity to Mediodorsal Thalamus (MD)</span>
+  <span class="title">Lesion Network Map Viewer</span>
+  <span class="subtitle">Connectivity to Mediodorsal Thalamus (MD)</span>
   <span class="status" id="status-text">Loading...</span>
   <button class="fullscreen-btn" id="btn-fullscreen" onclick="toggleFullscreen()" title="Fullscreen (F)">&#x26F6;</button>
 </div>
@@ -968,6 +968,21 @@ function buildScene(data) {
   // Lesion
   lesionMesh = buildLesion(data.lesion.center, data.lesion.radius);
   scene.add(lesionMesh);
+
+  // Name label floating above the brain (in 3D scene)
+  const nameCanvas = document.createElement('canvas');
+  nameCanvas.width = 512; nameCanvas.height = 64;
+  const nctx = nameCanvas.getContext('2d');
+  nctx.font = 'Bold 36px Segoe UI, sans-serif';
+  nctx.textAlign = 'center';
+  nctx.fillStyle = '#d0d0e8';
+  nctx.fillText('Yaser SG', 256, 42);
+  const nameTex = new THREE.CanvasTexture(nameCanvas);
+  const nameMat = new THREE.SpriteMaterial({ map: nameTex, transparent: true, depthWrite: false, depthTest: false });
+  const nameSprite = new THREE.Sprite(nameMat);
+  nameSprite.scale.set(60, 7.5, 1);
+  nameSprite.position.set(0, -15, 85); // centered above the brain
+  scene.add(nameSprite);
 
   // Update stats
   const totalVerts = data.brain.left.vertices.length + data.brain.right.vertices.length;
