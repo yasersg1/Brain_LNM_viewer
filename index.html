@@ -123,7 +123,7 @@
   }
   .colorbar-gradient {
     flex: 1; height: 12px; border-radius: 3px;
-    background: linear-gradient(to right, #0044ff, #2266cc, #444466, #666644, #cc6622, #ff4400);
+    background: linear-gradient(to right, #0040aa, #10cc70, #444444, #aa3020, #ffdd10);
   }
   .colorbar-labels {
     display: flex; justify-content: space-between;
@@ -343,8 +343,8 @@
   <!-- Legend: LNM colors -->
   <div class="panel-section" id="legend-lnm">
     <h3>Connectivity Legend</h3>
-    <div class="legend-item"><div class="legend-dot" style="background:#ff5533"></div> Positive correlation to MD</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#3366ff"></div> Anticorrelation to MD</div>
+    <div class="legend-item"><div class="legend-dot" style="background:linear-gradient(to right,#802010,#ffe010); width:40px; border-radius:3px; height:10px;"></div> Corr: red→yellow</div>
+    <div class="legend-item"><div class="legend-dot" style="background:linear-gradient(to right,#001880,#10e070); width:40px; border-radius:3px; height:10px;"></div> Anti: blue→green</div>
     <div class="legend-item"><div class="legend-dot" style="background:#33eebb"></div> MD Thalamus (peak)</div>
   </div>
 
@@ -413,38 +413,28 @@ let fpsFrames = 0, fpsTime = 0;
 
 // ─── Color maps ─────────────────────────────────────────────────────────────
 function correlationColor(value) {
-  // value in [-1, 1]
-  // Positive: black → orange → red → white
-  // Negative: black → blue → cyan → white
+  // Positive (correlacion): red(bajo) → yellow(alto)
+  // Negative (anticorrelacion): blue(bajo) → green(alto)
   const r = new THREE.Color();
   if (value >= 0) {
     const t = Math.min(value, 1);
-    if (t < 0.5) {
-      r.setRGB(t * 2 * 0.95, t * 2 * 0.35, 0.02);
-    } else {
-      const s = (t - 0.5) * 2;
-      r.setRGB(0.95 + s * 0.05, 0.35 + s * 0.55, 0.02 + s * 0.2);
-    }
+    r.setRGB(0.5 + 0.5 * t, 0.1 + 0.85 * t, 0.02);
   } else {
     const t = Math.min(Math.abs(value), 1);
-    if (t < 0.5) {
-      r.setRGB(0.02, t * 2 * 0.35, t * 2 * 0.95);
-    } else {
-      const s = (t - 0.5) * 2;
-      r.setRGB(0.02 + s * 0.2, 0.35 + s * 0.55, 0.95 + s * 0.05);
-    }
+    r.setRGB(0.02, 0.15 + 0.75 * t, 0.5 + 0.2 * t);
   }
   return r;
 }
 
 function streamlineColor(value) {
+  // Same scheme: red→yellow for corr, blue→green for anti
   const c = new THREE.Color();
   if (value >= 0) {
     const t = Math.min(value, 1);
-    c.setRGB(1.0, 0.3 + t * 0.4, 0.1 * (1 - t));
+    c.setRGB(0.6 + 0.4 * t, 0.15 + 0.8 * t, 0.03);
   } else {
     const t = Math.min(Math.abs(value), 1);
-    c.setRGB(0.1 * (1 - t), 0.4 + t * 0.3, 1.0);
+    c.setRGB(0.03, 0.2 + 0.7 * t, 0.55 + 0.15 * t);
   }
   return c;
 }
@@ -1168,25 +1158,18 @@ function updateDynamic() {
 
   const showColors = document.getElementById('show-surface-color').checked;
 
-  // ── Update surface colors: activation map (yellow=ON, blue=OFF) ──
-  // Each vertex's "activation" = its connectivity * the matching network intensity
-  // Positive conn vertices activate with corrIntensity
-  // Negative conn vertices activate with antiIntensity
-  // Then map activation level to: yellow(hot) = active, blue(cold) = inactive
+  // ── Update surface colors ──
+  // Correlaciones: red (bajo |t|) → yellow (alto |t|)  [prendido/hot]
+  // Anticorrelaciones: blue (bajo |t|) → green (alto |t|)  [apagado/cold]
+  // Cada uno modulado por su intensidad dinámica
 
-  function activationColor(activation) {
-    // activation in [0, 1]: 0=deep blue, 0.5=dim gray, 1=bright yellow
-    const c = new THREE.Color();
-    if (activation > 0.5) {
-      // 0.5→1.0: gray → yellow → white
-      const t = (activation - 0.5) * 2;
-      c.setRGB(0.4 + 0.6 * t, 0.35 + 0.55 * t, 0.08 + 0.05 * t);
-    } else {
-      // 0→0.5: deep blue → gray
-      const t = activation * 2;
-      c.setRGB(0.05 + 0.35 * t, 0.05 + 0.30 * t, 0.25 + 0.05 * t);
-    }
-    return c;
+  function corrColor(t) {
+    // t in [0,1]: 0=dark red, 1=bright yellow
+    return [0.5 + 0.5 * t, 0.1 + 0.85 * t, 0.02];
+  }
+  function antiColor(t) {
+    // t in [0,1]: 0=dark blue, 1=bright green
+    return [0.02, 0.15 + 0.75 * t, 0.5 + 0.2 * t];
   }
 
   function updateHemiActivation(mesh, hemiData, connectivity) {
@@ -1201,25 +1184,26 @@ function updateDynamic() {
         const idx = (i * 3 + j) * 3;
         const v = connectivity[vi];
 
-        // How active is this vertex right now?
-        let activation;
+        let r, g, b;
         if (v > 0) {
-          activation = v * corrIntensity;
+          // Correlación: |v| * corrIntensity → red-to-yellow
+          const activation = Math.min(1, v * corrIntensity);
+          [r, g, b] = corrColor(activation);
         } else if (v < 0) {
-          activation = Math.abs(v) * antiIntensity;
+          // Anticorrelación: |v| * antiIntensity → blue-to-green
+          const activation = Math.min(1, Math.abs(v) * antiIntensity);
+          [r, g, b] = antiColor(activation);
         } else {
-          activation = 0;
+          r = 0.3; g = 0.28; b = 0.3; // neutral gray
         }
-        activation = Math.min(1, activation);
 
         // Sulcal shading
         const sulcVal = sulc ? sulc[vi] || 0 : 0;
         const sulcShade = 0.7 + 0.3 * (0.5 + 0.5 * Math.tanh(sulcVal * 1.5));
 
-        const c = activationColor(activation);
-        arr[idx]     = c.r * sulcShade;
-        arr[idx + 1] = c.g * sulcShade;
-        arr[idx + 2] = c.b * sulcShade;
+        arr[idx]     = r * sulcShade;
+        arr[idx + 1] = g * sulcShade;
+        arr[idx + 2] = b * sulcShade;
       }
     }
     colorAttr.needsUpdate = true;
