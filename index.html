@@ -1,0 +1,1373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesion Network Map Viewer | Connectivity to MD Thalamus</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a12;
+    color: #d0d0d8;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    overflow: hidden;
+    height: 100vh;
+  }
+
+  /* ─── Top Bar ──────────────────────────────────────────────── */
+  #topbar {
+    position: fixed; top: 0; left: 0; right: 0;
+    height: 44px;
+    background: linear-gradient(180deg, #16162a 0%, #0e0e1a 100%);
+    border-bottom: 1px solid #2a2a44;
+    display: flex; align-items: center; padding: 0 20px;
+    z-index: 100;
+    gap: 16px;
+  }
+  #topbar .title {
+    font-size: 14px; font-weight: 600; color: #e0e0f0;
+    letter-spacing: 0.3px;
+  }
+  #topbar .subtitle {
+    font-size: 11px; color: #7878a0;
+  }
+  #topbar .status {
+    margin-left: auto;
+    font-size: 11px; color: #5a8; font-family: monospace;
+  }
+
+  /* ─── Canvas ───────────────────────────────────────────────── */
+  #canvas-container {
+    position: fixed; top: 44px; left: 0; right: 280px; bottom: 0;
+  }
+  canvas { display: block; width: 100%; height: 100%; }
+
+  /* ─── Side Panel ───────────────────────────────────────────── */
+  #sidebar {
+    position: fixed; top: 44px; right: 0; bottom: 0;
+    width: 280px;
+    background: #12121f;
+    border-left: 1px solid #2a2a44;
+    overflow-y: auto;
+    padding: 12px;
+    z-index: 100;
+  }
+  .panel-section {
+    margin-bottom: 14px;
+    background: #181830;
+    border-radius: 8px;
+    padding: 12px;
+    border: 1px solid #252545;
+  }
+  .panel-section h3 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+    color: #8888b0; margin-bottom: 10px;
+    border-bottom: 1px solid #252545; padding-bottom: 6px;
+  }
+  .control-row {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 8px; gap: 8px;
+  }
+  .control-row label {
+    font-size: 12px; color: #a0a0c0; flex-shrink: 0; min-width: 80px;
+  }
+  .control-row input[type="range"] {
+    flex: 1; height: 4px;
+    -webkit-appearance: none; appearance: none;
+    background: #2a2a50; border-radius: 2px; outline: none;
+  }
+  .control-row input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 14px; height: 14px;
+    border-radius: 50%; cursor: pointer;
+  }
+  .slider-corr::-webkit-slider-thumb { background: #ff6644; }
+  .slider-anti::-webkit-slider-thumb { background: #4488ff; }
+  .slider-neutral::-webkit-slider-thumb { background: #8888b0; }
+  .control-row .value {
+    font-size: 11px; color: #aaa; font-family: monospace;
+    min-width: 36px; text-align: right;
+  }
+  .toggle-row {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 6px;
+  }
+  .toggle-row label { font-size: 12px; color: #a0a0c0; cursor: pointer; }
+  .toggle-row input[type="checkbox"] {
+    accent-color: #6666cc;
+  }
+  button.action-btn {
+    width: 100%; padding: 8px; margin-top: 4px;
+    background: #2a2a55; color: #c0c0e0; border: 1px solid #3a3a65;
+    border-radius: 6px; cursor: pointer; font-size: 12px;
+    transition: background 0.2s;
+  }
+  button.action-btn:hover { background: #3a3a70; }
+  button.action-btn.active { background: #4a4a80; border-color: #6666cc; }
+
+  /* ─── Color Bar ────────────────────────────────────────────── */
+  .colorbar {
+    display: flex; align-items: center; gap: 8px;
+    margin-top: 8px; padding: 6px 0;
+  }
+  .colorbar-gradient {
+    flex: 1; height: 12px; border-radius: 3px;
+    background: linear-gradient(to right, #0044ff, #2266cc, #444466, #666644, #cc6622, #ff4400);
+  }
+  .colorbar-labels {
+    display: flex; justify-content: space-between;
+    font-size: 10px; color: #888; font-family: monospace;
+  }
+
+  /* ─── Info Panel ───────────────────────────────────────────── */
+  .info-text {
+    font-size: 11px; line-height: 1.6; color: #8888a0;
+  }
+  .info-text strong { color: #c0c0e0; }
+  .stat-row {
+    display: flex; justify-content: space-between;
+    font-size: 11px; padding: 2px 0;
+  }
+  .stat-row .stat-label { color: #7878a0; }
+  .stat-row .stat-val { color: #c0c0e0; font-family: monospace; }
+  .stat-val.positive { color: #ff8866; }
+  .stat-val.negative { color: #6688ff; }
+
+  /* ─── Legend Dots ──────────────────────────────────────────── */
+  .legend-item {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11px; color: #a0a0c0; margin-bottom: 4px;
+  }
+  .legend-dot {
+    width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+  }
+
+  /* ─── Loading overlay ─────────────────────────────────────── */
+  #loading {
+    position: fixed; inset: 0;
+    background: #0a0a12;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    z-index: 1000;
+    transition: opacity 0.5s;
+  }
+  #loading.hidden { opacity: 0; pointer-events: none; }
+  .spinner {
+    width: 40px; height: 40px;
+    border: 3px solid #2a2a44; border-top-color: #6666cc;
+    border-radius: 50%; animation: spin 1s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #loading p { margin-top: 16px; color: #7878a0; font-size: 13px; }
+
+  /* ─── Tooltip ──────────────────────────────────────────────── */
+  #tooltip {
+    position: fixed; display: none;
+    background: #1a1a35ee; border: 1px solid #3a3a65;
+    border-radius: 6px; padding: 8px 12px;
+    font-size: 11px; color: #d0d0e0;
+    pointer-events: none; z-index: 200;
+    max-width: 220px;
+  }
+</style>
+</head>
+<body>
+
+<!-- Loading overlay -->
+<div id="loading">
+  <div class="spinner"></div>
+  <p>Loading brain data...</p>
+</div>
+
+<!-- Tooltip -->
+<div id="tooltip"></div>
+
+<!-- Top bar -->
+<div id="topbar">
+  <span class="title">Lesion Network Map Viewer</span>
+  <span class="subtitle">Connectivity to Mediodorsal Thalamus (MD)</span>
+  <span class="status" id="status-text">Loading...</span>
+</div>
+
+<!-- Three.js canvas -->
+<div id="canvas-container"></div>
+
+<!-- Sidebar controls -->
+<div id="sidebar">
+  <!-- Thresholds -->
+  <div class="panel-section">
+    <h3>Connectivity Thresholds</h3>
+    <div class="control-row">
+      <label>Correlation</label>
+      <input type="range" class="slider-corr" id="thresh-corr" min="0" max="1" step="0.01" value="0.15">
+      <span class="value" id="val-corr">0.15</span>
+    </div>
+    <div class="control-row">
+      <label>Anticorrelation</label>
+      <input type="range" class="slider-anti" id="thresh-anti" min="0" max="1" step="0.01" value="0.15">
+      <span class="value" id="val-anti">-0.15</span>
+    </div>
+    <div class="colorbar-labels">
+      <span>-1.0 (anti)</span>
+      <span>0</span>
+      <span>+1.0 (corr)</span>
+    </div>
+    <div class="colorbar-gradient"></div>
+  </div>
+
+  <!-- Display -->
+  <div class="panel-section">
+    <h3>Display</h3>
+    <div class="control-row">
+      <label>Brain Opacity</label>
+      <input type="range" class="slider-neutral" id="brain-opacity" min="0" max="1" step="0.01" value="0.88">
+      <span class="value" id="val-opacity">0.88</span>
+    </div>
+    <div class="control-row">
+      <label>Streamline Width</label>
+      <input type="range" class="slider-neutral" id="stream-width" min="0.2" max="3" step="0.1" value="1.2">
+      <span class="value" id="val-swidth">1.2</span>
+    </div>
+    <div class="control-row">
+      <label>Stream Opacity</label>
+      <input type="range" class="slider-neutral" id="stream-opacity" min="0" max="1" step="0.01" value="0.75">
+      <span class="value" id="val-sopacity">0.75</span>
+    </div>
+    <div class="toggle-row">
+      <input type="checkbox" id="show-corr" checked>
+      <label for="show-corr">Show correlations (warm)</label>
+    </div>
+    <div class="toggle-row">
+      <input type="checkbox" id="show-anti" checked>
+      <label for="show-anti">Show anticorrelations (cold)</label>
+    </div>
+    <div class="toggle-row">
+      <input type="checkbox" id="show-brain" checked>
+      <label for="show-brain">Show brain surface</label>
+    </div>
+    <div class="toggle-row">
+      <input type="checkbox" id="show-md" checked>
+      <label for="show-md">Show MD thalamus</label>
+    </div>
+    <div class="toggle-row">
+      <input type="checkbox" id="show-lesion" checked>
+      <label for="show-lesion">Show lesion</label>
+    </div>
+    <div class="toggle-row">
+      <input type="checkbox" id="show-surface-color" checked>
+      <label for="show-surface-color">Surface connectivity map</label>
+    </div>
+    <div class="toggle-row">
+      <input type="checkbox" id="color-by-bundle" checked>
+      <label for="color-by-bundle">Color by AAN bundle</label>
+    </div>
+  </div>
+
+  <!-- Clipping / Brain Cut -->
+  <div class="panel-section">
+    <h3>Brain Clipping</h3>
+    <div class="control-row">
+      <label>Clip Axis</label>
+      <select id="clip-axis" style="flex:1; background:#222244; color:#c0c0e0; border:1px solid #3a3a65; border-radius:4px; padding:4px; font-size:12px;">
+        <option value="none">None</option>
+        <option value="x">Sagittal (X)</option>
+        <option value="y">Coronal (Y)</option>
+        <option value="z">Axial (Z)</option>
+      </select>
+    </div>
+    <div class="control-row">
+      <label>Clip Position</label>
+      <input type="range" class="slider-neutral" id="clip-pos" min="-1" max="1" step="0.01" value="0">
+      <span class="value" id="val-clip">0</span>
+    </div>
+    <div class="toggle-row">
+      <input type="checkbox" id="clip-flip">
+      <label for="clip-flip">Flip clip side</label>
+    </div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px; margin-top:4px;">
+      <button class="action-btn" onclick="setClipPreset('medial-l')">Medial L</button>
+      <button class="action-btn" onclick="setClipPreset('medial-r')">Medial R</button>
+    </div>
+  </div>
+
+  <!-- Animation -->
+  <div class="panel-section">
+    <h3>Animation</h3>
+    <div class="toggle-row">
+      <input type="checkbox" id="auto-rotate" checked>
+      <label for="auto-rotate">Auto-rotate</label>
+    </div>
+    <div class="control-row">
+      <label>Rotation Speed</label>
+      <input type="range" class="slider-neutral" id="rotate-speed" min="0.1" max="3" step="0.1" value="0.5">
+      <span class="value" id="val-rspeed">0.5</span>
+    </div>
+    <button class="action-btn" id="btn-simple" onclick="toggleDynamic('simple')" style="background:#2a3a55">
+      &#9650;&#9660; Simple (Corr/Anti sube-baja)
+    </button>
+    <button class="action-btn" id="btn-real" onclick="toggleDynamic('real')" style="margin-top:3px; background:#2a4a35">
+      &#9836; Real rs-fMRI (20 sujetos ABIDE)
+    </button>
+    <div class="control-row" style="margin-top:8px">
+      <label>Anim Speed</label>
+      <input type="range" class="slider-neutral" id="anim-speed" min="0.5" max="10" step="0.5" value="1">
+      <span class="value" id="val-aspeed">1x</span>
+    </div>
+  </div>
+
+  <!-- Views -->
+  <div class="panel-section">
+    <h3>Camera Views</h3>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px;">
+      <button class="action-btn" onclick="setView('lateral-l')">Lateral L</button>
+      <button class="action-btn" onclick="setView('lateral-r')">Lateral R</button>
+      <button class="action-btn" onclick="setView('anterior')">Anterior</button>
+      <button class="action-btn" onclick="setView('posterior')">Posterior</button>
+      <button class="action-btn" onclick="setView('superior')">Superior</button>
+      <button class="action-btn" onclick="setView('inferior')">Inferior</button>
+    </div>
+  </div>
+
+  <!-- Legend: LNM colors -->
+  <div class="panel-section" id="legend-lnm">
+    <h3>Connectivity Legend</h3>
+    <div class="legend-item"><div class="legend-dot" style="background:#ff5533"></div> Positive correlation to MD</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#3366ff"></div> Anticorrelation to MD</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#33eebb"></div> MD Thalamus (peak)</div>
+  </div>
+
+  <!-- Legend: AAN bundle colors -->
+  <div class="panel-section" id="legend-bundles">
+    <h3>AAN Bundles</h3>
+    <div class="legend-item"><div class="legend-dot" style="background:#f27333"></div> CT — Corticothalamic</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#e62626"></div> CTT — Central Tegmental</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#33bf66"></div> AR — Anterior Radiation</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#b333cc"></div> ML — Medial Lemniscus</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#ccb326"></div> MLF — Medial Long. Fasc.</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#3388e6"></div> STT — Spinothalamic</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#33cccc"></div> CB — Cingulum</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#8c8c8c"></div> CST — Corticospinal</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#e680b3"></div> F — Fornix</div>
+  </div>
+
+  <!-- Stats -->
+  <div class="panel-section" id="stats-panel">
+    <h3>Statistics</h3>
+    <div class="stat-row"><span class="stat-label">Vertices</span><span class="stat-val" id="stat-verts">-</span></div>
+    <div class="stat-row"><span class="stat-label">Streamlines</span><span class="stat-val" id="stat-streams">-</span></div>
+    <div class="stat-row"><span class="stat-label">Positive (r&gt;thresh)</span><span class="stat-val positive" id="stat-pos">-</span></div>
+    <div class="stat-row"><span class="stat-label">Negative (r&lt;thresh)</span><span class="stat-val negative" id="stat-neg">-</span></div>
+    <div class="stat-row"><span class="stat-label">Mean |r|</span><span class="stat-val" id="stat-mean">-</span></div>
+    <div class="stat-row"><span class="stat-label">FPS</span><span class="stat-val" id="stat-fps">-</span></div>
+  </div>
+
+  <div class="panel-section">
+    <h3>About</h3>
+    <p class="info-text">
+      <strong>Lesion Network Mapping</strong> visualization showing functional
+      connectivity correlations and anticorrelations between cortical regions
+      and the mediodorsal thalamus (MD). Built on concepts from
+      <strong>STREAM-4D</strong> (Atalay et al., 2025).
+    </p>
+  </div>
+</div>
+
+<!-- Three.js -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+// ─── Global state ───────────────────────────────────────────────────────────
+let scene, camera, renderer, controls, composer;
+let brainMeshL, brainMeshR, mdMesh, lesionMesh;
+let streamlineGroups = { positive: [], negative: [], background: [] };
+let brainData = null;
+let dynamicMode = false;
+let dynamicFrame = 0;
+let clock = new THREE.Clock();
+let fpsFrames = 0, fpsTime = 0;
+
+// ─── Color maps ─────────────────────────────────────────────────────────────
+function correlationColor(value) {
+  // value in [-1, 1]
+  // Positive: black → orange → red → white
+  // Negative: black → blue → cyan → white
+  const r = new THREE.Color();
+  if (value >= 0) {
+    const t = Math.min(value, 1);
+    if (t < 0.5) {
+      r.setRGB(t * 2 * 0.95, t * 2 * 0.35, 0.02);
+    } else {
+      const s = (t - 0.5) * 2;
+      r.setRGB(0.95 + s * 0.05, 0.35 + s * 0.55, 0.02 + s * 0.2);
+    }
+  } else {
+    const t = Math.min(Math.abs(value), 1);
+    if (t < 0.5) {
+      r.setRGB(0.02, t * 2 * 0.35, t * 2 * 0.95);
+    } else {
+      const s = (t - 0.5) * 2;
+      r.setRGB(0.02 + s * 0.2, 0.35 + s * 0.55, 0.95 + s * 0.05);
+    }
+  }
+  return r;
+}
+
+function streamlineColor(value) {
+  const c = new THREE.Color();
+  if (value >= 0) {
+    const t = Math.min(value, 1);
+    c.setRGB(1.0, 0.3 + t * 0.4, 0.1 * (1 - t));
+  } else {
+    const t = Math.min(Math.abs(value), 1);
+    c.setRGB(0.1 * (1 - t), 0.4 + t * 0.3, 1.0);
+  }
+  return c;
+}
+
+// Distinct colors per AAN bundle — each tract has its own identity color
+const bundleColors = {
+  'CT_L':  new THREE.Color(0.95, 0.45, 0.20),  // naranja (corticothalamic L)
+  'CT_R':  new THREE.Color(1.00, 0.60, 0.15),  // naranja claro (corticothalamic R)
+  'CTT_L': new THREE.Color(0.90, 0.15, 0.15),  // rojo (central tegmental L)
+  'CTT_R': new THREE.Color(1.00, 0.25, 0.25),  // rojo claro (central tegmental R)
+  'AR_L':  new THREE.Color(0.20, 0.75, 0.40),  // verde (anterior radiation L)
+  'AR_R':  new THREE.Color(0.30, 0.90, 0.50),  // verde claro (anterior radiation R)
+  'ML_L':  new THREE.Color(0.70, 0.20, 0.80),  // purpura (medial lemniscus L)
+  'ML_R':  new THREE.Color(0.85, 0.35, 0.95),  // purpura claro (medial lemniscus R)
+  'MLF_L': new THREE.Color(0.80, 0.70, 0.15),  // amarillo (MLF L)
+  'MLF_R': new THREE.Color(0.95, 0.85, 0.20),  // amarillo claro (MLF R)
+  'STT_L': new THREE.Color(0.20, 0.55, 0.90),  // azul (spinothalamic L)
+  'STT_R': new THREE.Color(0.35, 0.70, 1.00),  // azul claro (spinothalamic R)
+  'CB_L':  new THREE.Color(0.20, 0.80, 0.80),  // cyan (cingulum L)
+  'CB_R':  new THREE.Color(0.30, 0.95, 0.95),  // cyan claro (cingulum R)
+  'CST_L': new THREE.Color(0.55, 0.55, 0.55),  // gris (corticospinal L)
+  'CST_R': new THREE.Color(0.70, 0.70, 0.70),  // gris claro (corticospinal R)
+  'F_L_R': new THREE.Color(0.90, 0.50, 0.70),  // rosa (fornix)
+};
+let colorByBundle = true; // toggle state
+
+// ─── Clipping plane for brain sectioning ───────────────────────────────────
+const clipPlane = new THREE.Plane(new THREE.Vector3(1, 0, 0), 0);
+let clipEnabled = false;
+
+function updateClipPlane() {
+  const axis = document.getElementById('clip-axis').value;
+  const pos = parseFloat(document.getElementById('clip-pos').value);
+  const flip = document.getElementById('clip-flip').checked;
+
+  if (axis === 'none') {
+    clipEnabled = false;
+    // Remove clipping from all brain materials
+    [brainMeshL, brainMeshR].forEach(m => {
+      if (m) m.material.clippingPlanes = [];
+    });
+    return;
+  }
+
+  clipEnabled = true;
+  const dir = flip ? -1 : 1;
+
+  // Map slider [-1, 1] to brain coordinate range (~-80 to 80 mm)
+  const range = 80;
+  const offset = pos * range;
+
+  if (axis === 'x') {
+    clipPlane.normal.set(dir, 0, 0);
+    clipPlane.constant = -offset * dir;
+  } else if (axis === 'y') {
+    clipPlane.normal.set(0, dir, 0);
+    clipPlane.constant = -offset * dir;
+  } else if (axis === 'z') {
+    clipPlane.normal.set(0, 0, dir);
+    clipPlane.constant = -offset * dir;
+  }
+
+  // Apply clipping to brain meshes
+  [brainMeshL, brainMeshR].forEach(m => {
+    if (m) {
+      m.material.clippingPlanes = [clipPlane];
+      m.material.clipShadows = true;
+      m.material.side = THREE.DoubleSide; // show interior face
+    }
+  });
+
+  document.getElementById('val-clip').textContent = offset.toFixed(0) + 'mm';
+}
+
+window.setClipPreset = function(preset) {
+  const axisEl = document.getElementById('clip-axis');
+  const posEl = document.getElementById('clip-pos');
+  const flipEl = document.getElementById('clip-flip');
+
+  switch(preset) {
+    case 'medial-l':
+      axisEl.value = 'x';
+      posEl.value = '0.05';
+      flipEl.checked = true;
+      break;
+    case 'medial-r':
+      axisEl.value = 'x';
+      posEl.value = '0.05';
+      flipEl.checked = false;
+      break;
+  }
+  updateClipPlane();
+  // Set camera to medial view
+  const dist = 240;
+  const side = preset === 'medial-l' ? 1 : -1;
+  window.setView(preset === 'medial-l' ? 'lateral-r' : 'lateral-l');
+};
+
+// ─── Scene setup ────────────────────────────────────────────────────────────
+function getContainerSize() {
+  const container = document.getElementById('canvas-container');
+  let w = container.clientWidth, h = container.clientHeight;
+  // Fallback if container hasn't been laid out yet
+  if (w === 0 || h === 0) {
+    w = window.innerWidth - 280;
+    h = window.innerHeight - 44;
+  }
+  return { w: Math.max(w, 100), h: Math.max(h, 100) };
+}
+
+function initScene() {
+  const container = document.getElementById('canvas-container');
+  const { w, h } = getContainerSize();
+
+  // Renderer — enable clipping planes
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+  renderer.setSize(w, h);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.2;
+  renderer.localClippingEnabled = true;
+  container.appendChild(renderer.domElement);
+
+  // Scene
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0a0a12);
+  scene.fog = new THREE.FogExp2(0x0a0a12, 0.0015);
+
+  // Camera — stable lateral view like STREAM-4D video
+  camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 2000);
+  const brainCenter = new THREE.Vector3(0, -15, 15);
+  const camDist = 240;
+  camera.position.set(camDist, -15, 40); // start from right lateral
+  camera.up.set(0, 0, 1); // Z-axis is up (superior direction)
+
+  // Controls — constrained to rotate on a stable horizontal axis
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.autoRotate = true;
+  controls.autoRotateSpeed = 0.6;
+  controls.target.copy(brainCenter);
+  controls.minDistance = 120;
+  controls.maxDistance = 500;
+  // Lock vertical rotation to keep a stable viewing plane
+  controls.minPolarAngle = Math.PI * 0.35; // slight tilt down limit
+  controls.maxPolarAngle = Math.PI * 0.65; // slight tilt up limit
+
+  // Lights — 3-point setup for anatomical surface detail
+  const ambient = new THREE.AmbientLight(0x606070, 0.5);
+  scene.add(ambient);
+
+  // Key light: strong from upper-right-front
+  const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+  dirLight.position.set(100, 100, 120);
+  scene.add(dirLight);
+
+  // Fill light: softer from left to reduce harsh shadows in sulci
+  const dirLight2 = new THREE.DirectionalLight(0xccccdd, 0.4);
+  dirLight2.position.set(-120, -30, 50);
+  scene.add(dirLight2);
+
+  // Rim light: from behind/below to outline brain shape
+  const dirLight3 = new THREE.DirectionalLight(0x8888aa, 0.3);
+  dirLight3.position.set(0, -100, -80);
+  scene.add(dirLight3);
+
+  const hemiLight = new THREE.HemisphereLight(0x8888aa, 0x333344, 0.45);
+  scene.add(hemiLight);
+
+  // Post-processing: bloom for glowing streamlines (optional, can be heavy)
+  try {
+    composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+    const bloom = new UnrealBloomPass(new THREE.Vector2(w, h), 0.4, 0.3, 0.85);
+    composer.addPass(bloom);
+  } catch(e) {
+    console.warn('Bloom not available, using basic renderer');
+    composer = null;
+  }
+
+  // Resize handler
+  function handleResize() {
+    const { w: w2, h: h2 } = getContainerSize();
+    camera.aspect = w2 / h2;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w2, h2);
+    if (composer) composer.setSize(w2, h2);
+  }
+  window.addEventListener('resize', handleResize);
+  // Also resize after a short delay to catch initial layout
+  setTimeout(handleResize, 100);
+}
+
+// ─── Build brain mesh ───────────────────────────────────────────────────────
+function buildBrainMesh(hemiData, connectivity, showColors) {
+  const vertices = hemiData.vertices;
+  const faces = hemiData.faces;
+  const normals = hemiData.normals;
+  const sulc = hemiData.sulc; // sulcal depth: negative=sulci, positive=gyri
+
+  const geo = new THREE.BufferGeometry();
+  const positions = new Float32Array(faces.length * 3 * 3);
+  const norms = new Float32Array(faces.length * 3 * 3);
+  const colors = new Float32Array(faces.length * 3 * 3);
+
+  for (let i = 0; i < faces.length; i++) {
+    for (let j = 0; j < 3; j++) {
+      const vi = faces[i][j];
+      const idx = (i * 3 + j) * 3;
+      positions[idx]     = vertices[vi][0];
+      positions[idx + 1] = vertices[vi][1];
+      positions[idx + 2] = vertices[vi][2];
+      norms[idx]     = normals[vi][0];
+      norms[idx + 1] = normals[vi][1];
+      norms[idx + 2] = normals[vi][2];
+
+      // Sulcal shading: strong contrast to make gyri/sulci recognizable
+      const sulcVal = sulc ? sulc[vi] || 0 : 0;
+      const sulcShade = 0.5 + 0.5 * Math.tanh(sulcVal * 1.5);
+
+      if (showColors) {
+        const c = correlationColor(connectivity[vi]);
+        const absConn = Math.abs(connectivity[vi]);
+        // Blend: low connectivity → anatomical gray, high → full color
+        const blend = Math.min(1, absConn * 2.5);
+        const shade = 0.55 + 0.45 * sulcShade;
+        const grayR = 0.78 * shade, grayG = 0.72 * shade, grayB = 0.74 * shade;
+        colors[idx]     = grayR * (1 - blend) + c.r * shade * blend;
+        colors[idx + 1] = grayG * (1 - blend) + c.g * shade * blend;
+        colors[idx + 2] = grayB * (1 - blend) + c.b * shade * blend;
+      } else {
+        // Anatomical pinkish-gray like real cortical tissue
+        const shade = 0.55 + 0.45 * sulcShade;
+        colors[idx]     = 0.78 * shade;
+        colors[idx + 1] = 0.72 * shade;
+        colors[idx + 2] = 0.74 * shade;
+      }
+    }
+  }
+
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('normal', new THREE.BufferAttribute(norms, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+  const mat = new THREE.MeshPhongMaterial({
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.88,
+    side: THREE.FrontSide,
+    shininess: 25,
+    specular: new THREE.Color(0x444455),
+    depthWrite: true,
+  });
+
+  return new THREE.Mesh(geo, mat);
+}
+
+// ─── Update brain colors ────────────────────────────────────────────────────
+function updateBrainColors(mesh, hemiData, connectivity, showColors) {
+  const faces = hemiData.faces;
+  const sulc = hemiData.sulc;
+  const colorAttr = mesh.geometry.getAttribute('color');
+  const arr = colorAttr.array;
+
+  for (let i = 0; i < faces.length; i++) {
+    for (let j = 0; j < 3; j++) {
+      const vi = faces[i][j];
+      const idx = (i * 3 + j) * 3;
+      const sulcVal = sulc ? sulc[vi] || 0 : 0;
+      const sulcShade = 0.5 + 0.5 * Math.tanh(sulcVal * 1.5);
+
+      if (showColors) {
+        const c = correlationColor(connectivity[vi]);
+        const absConn = Math.abs(connectivity[vi]);
+        const blend = Math.min(1, absConn * 2.5);
+        const shade = 0.55 + 0.45 * sulcShade;
+        const grayR = 0.78 * shade, grayG = 0.72 * shade, grayB = 0.74 * shade;
+        arr[idx]   = grayR * (1 - blend) + c.r * shade * blend;
+        arr[idx+1] = grayG * (1 - blend) + c.g * shade * blend;
+        arr[idx+2] = grayB * (1 - blend) + c.b * shade * blend;
+      } else {
+        const shade = 0.55 + 0.45 * sulcShade;
+        arr[idx]   = 0.78 * shade;
+        arr[idx+1] = 0.72 * shade;
+        arr[idx+2] = 0.74 * shade;
+      }
+    }
+  }
+  colorAttr.needsUpdate = true;
+}
+
+// ─── Build streamlines ──────────────────────────────────────────────────────
+function buildStreamlines(streamlinesData) {
+  const group = new THREE.Group();
+  group.name = 'streamlines';
+
+  streamlinesData.forEach((sl) => {
+    const strength = sl.strength;
+    const absStrength = Math.abs(strength);
+    const isPositive = strength >= 0;
+    const bundle = sl.bundle || null;
+
+    // Color mode: by bundle identity or by LNM connectivity
+    let color;
+    if (colorByBundle && bundle && bundleColors[bundle]) {
+      color = bundleColors[bundle].clone();
+    } else if (absStrength > 0.08) {
+      color = streamlineColor(strength);
+    } else {
+      color = new THREE.Color(0.35, 0.38, 0.50);
+    }
+
+    const isStrong = absStrength > 0.08 || (bundle && bundleColors[bundle]);
+
+    // Smooth CatmullRom curve from real tractography waypoints
+    const waypoints = sl.points.map(p => new THREE.Vector3(p[0], p[1], p[2]));
+    const nSamples = Math.min(50, Math.max(20, waypoints.length * 3));
+    const curve = new THREE.CatmullRomCurve3(waypoints, false, 'catmullrom', 0.4);
+    const curvePoints = curve.getPoints(nSamples);
+    const geo = new THREE.BufferGeometry().setFromPoints(curvePoints);
+
+    // Color along the streamline
+    const vertColors = new Float32Array(curvePoints.length * 3);
+    for (let i = 0; i < curvePoints.length; i++) {
+      const t = i / (curvePoints.length - 1);
+      const intensity = isStrong
+        ? 0.5 + 0.5 * (1 - t * t)
+        : 0.6 + 0.2 * Math.sin(t * Math.PI);
+      vertColors[i*3]   = color.r * intensity;
+      vertColors[i*3+1] = color.g * intensity;
+      vertColors[i*3+2] = color.b * intensity;
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(vertColors, 3));
+
+    const mat = new THREE.LineBasicMaterial({
+      vertexColors: true,
+      transparent: true,
+      opacity: isStrong ? 0.7 : 0.18,
+      linewidth: 1,
+    });
+
+    const line = new THREE.Line(geo, mat);
+    line.userData = { strength, isPositive, isStrong, bundle,
+                      baseOpacity: isStrong ? 0.7 : 0.18 };
+    group.add(line);
+
+    if (isStrong) {
+      if (isPositive) {
+        streamlineGroups.positive.push(line);
+      } else {
+        streamlineGroups.negative.push(line);
+      }
+    } else {
+      streamlineGroups.background = streamlineGroups.background || [];
+      streamlineGroups.background.push(line);
+    }
+  });
+
+  return group;
+}
+
+// ─── Build MD thalamus ──────────────────────────────────────────────────────
+function buildMDThalamus(center) {
+  const geo = new THREE.SphereGeometry(2, 24, 24);
+  const mat = new THREE.MeshPhongMaterial({
+    color: 0x22ddaa,
+    emissive: 0x11aa77,
+    emissiveIntensity: 0.8,
+    transparent: true,
+    opacity: 0.95,
+    shininess: 60,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(center[0], center[1], center[2]);
+
+  // Add a glowing halo
+  const haloGeo = new THREE.SphereGeometry(4, 24, 24);
+  const haloMat = new THREE.MeshBasicMaterial({
+    color: 0x33eebb,
+    transparent: true,
+    opacity: 0.15,
+    side: THREE.BackSide,
+  });
+  const halo = new THREE.Mesh(haloGeo, haloMat);
+  mesh.add(halo);
+
+  // Label
+  const labelSprite = createTextSprite('MD', 0x33eebb);
+  labelSprite.position.set(0, 6, 0);
+  mesh.add(labelSprite);
+
+  return mesh;
+}
+
+// ─── Build lesion marker ────────────────────────────────────────────────────
+function buildLesion(center, radius) {
+  const geo = new THREE.SphereGeometry(radius * 0.6, 20, 20);
+  const mat = new THREE.MeshPhongMaterial({
+    color: 0xff2244,
+    emissive: 0xcc1133,
+    emissiveIntensity: 0.5,
+    transparent: true,
+    opacity: 0.45,
+    wireframe: false,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(center[0], center[1], center[2]);
+
+  // Wireframe overlay
+  const wireMat = new THREE.MeshBasicMaterial({
+    color: 0xff4466,
+    wireframe: true,
+    transparent: true,
+    opacity: 0.3,
+  });
+  const wireMesh = new THREE.Mesh(geo.clone(), wireMat);
+  mesh.add(wireMesh);
+
+  // Label
+  const labelSprite = createTextSprite('Lesion', 0xff4466);
+  labelSprite.position.set(0, radius * 0.8 + 5, 0);
+  mesh.add(labelSprite);
+
+  return mesh;
+}
+
+// ─── Text sprite helper ─────────────────────────────────────────────────────
+function createTextSprite(text, color) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256; canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  ctx.font = 'Bold 28px Segoe UI, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#' + new THREE.Color(color).getHexString();
+  ctx.fillText(text, 128, 40);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(20, 5, 1);
+  return sprite;
+}
+
+// ─── Load and build scene ───────────────────────────────────────────────────
+async function loadData() {
+  const resp = await fetch('data/brain_data.json');
+  brainData = await resp.json();
+  return brainData;
+}
+
+function buildScene(data) {
+  // Brain hemispheres
+  brainMeshL = buildBrainMesh(data.brain.left, data.brain.left.connectivity, true);
+  brainMeshR = buildBrainMesh(data.brain.right, data.brain.right.connectivity, true);
+  scene.add(brainMeshL);
+  scene.add(brainMeshR);
+
+  // Streamlines
+  const streamGroup = buildStreamlines(data.streamlines);
+  scene.add(streamGroup);
+
+  // MD thalamus
+  mdMesh = buildMDThalamus(data.subcortical.md_thalamus.center);
+  scene.add(mdMesh);
+
+  // Lesion
+  lesionMesh = buildLesion(data.lesion.center, data.lesion.radius);
+  scene.add(lesionMesh);
+
+  // Update stats
+  const totalVerts = data.brain.left.vertices.length + data.brain.right.vertices.length;
+  document.getElementById('stat-verts').textContent = totalVerts.toLocaleString();
+  document.getElementById('stat-streams').textContent = data.streamlines.length;
+
+  updateStreamlineVisibility();
+  updateStats();
+}
+
+// ─── Visibility & threshold updates ─────────────────────────────────────────
+function updateStreamlineVisibility() {
+  const corrThresh = parseFloat(document.getElementById('thresh-corr').value);
+  const antiThresh = parseFloat(document.getElementById('thresh-anti').value);
+  const showCorr = document.getElementById('show-corr').checked;
+  const showAnti = document.getElementById('show-anti').checked;
+  const opacity = parseFloat(document.getElementById('stream-opacity').value);
+
+  let posCount = 0, negCount = 0;
+
+  streamlineGroups.positive.forEach(line => {
+    const s = line.userData.strength;
+    const visible = showCorr && s >= corrThresh;
+    line.visible = visible;
+    line.material.opacity = opacity * Math.min(1, Math.abs(s) * 2);
+    if (visible) posCount++;
+  });
+
+  streamlineGroups.negative.forEach(line => {
+    const s = line.userData.strength;
+    const visible = showAnti && Math.abs(s) >= antiThresh;
+    line.visible = visible;
+    line.material.opacity = opacity * Math.min(1, Math.abs(s) * 2);
+    if (visible) negCount++;
+  });
+
+  // Background tracts: always visible at low opacity
+  (streamlineGroups.background || []).forEach(line => {
+    line.visible = showCorr || showAnti;
+    line.material.opacity = opacity * 0.25;
+  });
+
+  document.getElementById('stat-pos').textContent = posCount;
+  document.getElementById('stat-neg').textContent = negCount;
+}
+
+function updateStats() {
+  if (!brainData) return;
+  const allConn = [...brainData.brain.left.connectivity, ...brainData.brain.right.connectivity];
+  const meanAbs = allConn.reduce((s, v) => s + Math.abs(v), 0) / allConn.length;
+  document.getElementById('stat-mean').textContent = meanAbs.toFixed(3);
+}
+
+// ─── Dynamic FC data (loaded from real fMRI) ──────────────────────────────
+let dynamicFCData = null;
+
+async function loadDynamicFC() {
+  try {
+    const resp = await fetch('data/dynamic_fc.json');
+    dynamicFCData = await resp.json();
+    console.log('Dynamic FC loaded:', dynamicFCData.n_windows, 'windows');
+  } catch(e) {
+    console.warn('No dynamic FC data, using infraslow simulation');
+  }
+}
+
+// ─── Dynamic mode: two animation types ─────────────────────────────────────
+// 'simple' = sube-y-baja corr vs anticorr (pedagogical)
+// 'real'   = actual rs-fMRI dynamic FC from 20 ABIDE controls
+let dynamicStartTime = 0;
+let dynamicTimer = null;
+let dynamicType = null; // null | 'simple' | 'real'
+
+function stopDynamic() {
+  dynamicMode = false;
+  dynamicType = null;
+  if (dynamicTimer) { clearInterval(dynamicTimer); dynamicTimer = null; }
+  document.getElementById('btn-simple').classList.remove('active');
+  document.getElementById('btn-real').classList.remove('active');
+  if (brainData) {
+    const showColors = document.getElementById('show-surface-color').checked;
+    updateBrainColors(brainMeshL, brainData.brain.left, brainData.brain.left.connectivity, showColors);
+    updateBrainColors(brainMeshR, brainData.brain.right, brainData.brain.right.connectivity, showColors);
+    streamlineGroups.positive.forEach(l => { l.visible = true; l.material.opacity = l.userData.baseOpacity; });
+    streamlineGroups.negative.forEach(l => { l.visible = true; l.material.opacity = l.userData.baseOpacity; });
+    (streamlineGroups.background || []).forEach(l => { l.visible = true; l.material.opacity = l.userData.baseOpacity; });
+    updateStreamlineVisibility();
+    document.getElementById('status-text').textContent = 'Ready';
+    document.getElementById('status-text').style.color = '#5a8';
+  }
+}
+
+window.toggleDynamic = function(type) {
+  // If clicking the same button that's active, stop
+  if (dynamicMode && dynamicType === type) {
+    stopDynamic();
+    return;
+  }
+  // If switching type, stop first
+  if (dynamicMode) stopDynamic();
+
+  dynamicMode = true;
+  dynamicType = type;
+  dynamicStartTime = performance.now();
+
+  document.getElementById('btn-simple').classList.toggle('active', type === 'simple');
+  document.getElementById('btn-real').classList.toggle('active', type === 'real');
+
+  if (dynamicTimer) clearInterval(dynamicTimer);
+  dynamicTimer = setInterval(() => {
+    try {
+      updateDynamic();
+      if (composer) composer.render();
+      else if (renderer) renderer.render(scene, camera);
+    } catch(e) {
+      console.error('Dynamic animation error:', e);
+      document.getElementById('status-text').textContent = 'ERR: ' + e.message;
+      document.getElementById('status-text').style.color = '#f44';
+    }
+  }, 33);
+};
+
+// ─── Infraslow 1/f fluctuation generator ───────────────────────────────────
+// Simulates resting-state BOLD-like dynamics: 1/f spectrum + infraslow
+// oscillations (0.01–0.1 Hz), producing naturalistic aperiodic fluctuations
+// instead of a simple sine wave.
+const infraslowState = {
+  // Multiple oscillators at different infraslow frequencies
+  freqs:  [0.012, 0.027, 0.045, 0.067, 0.088], // Hz (infraslow band)
+  amps:   [0.35,  0.25,  0.18,  0.12,  0.10],   // 1/f amplitude falloff
+  phases: [0, 1.2, 2.8, 0.7, 4.1],              // random initial phases
+  // Anticorr uses different phases (anticorrelated networks fluctuate ~180° out)
+  antiPhases: [3.14, 4.3, 5.9, 3.8, 1.0],
+};
+
+function infraslowSignal(t, phases) {
+  let val = 0;
+  for (let i = 0; i < infraslowState.freqs.length; i++) {
+    val += infraslowState.amps[i] *
+           Math.sin(2 * Math.PI * infraslowState.freqs[i] * t + phases[i]);
+  }
+  // Normalize to [0, 1] range with baseline
+  return 0.5 + 0.5 * Math.tanh(val * 1.8);
+}
+
+function updateDynamic() {
+  if (!dynamicMode || !brainData) return;
+
+  const speed = parseFloat(document.getElementById('anim-speed').value);
+  const elapsed = (performance.now() - dynamicStartTime) / 1000.0 * speed;
+
+  let corrIntensity, antiIntensity;
+
+  if (dynamicType === 'simple') {
+    // ═══ SIMPLE: sube-y-baja pedagógico ═══
+    // Corr sube → amarillo, anti baja → azul. Luego se invierte.
+    // Ciclo ~8s a 1x, con overlap suave
+    const phase = (elapsed * 0.8) % (2 * Math.PI);
+    const raw = Math.sin(phase);
+    // Corr domina primera mitad, anti domina segunda mitad
+    // Overlap: el mínimo es 0.12 (nunca se apaga del todo)
+    corrIntensity = 0.12 + 0.88 * Math.max(0, raw);
+    antiIntensity = 0.12 + 0.88 * Math.max(0, -raw);
+
+  } else if (dynamicType === 'real' && dynamicFCData) {
+    // ═══ REAL: rs-fMRI dynamic FC de 20 sujetos ABIDE ═══
+    // A 1x = tiempo real (~6min de resting-state en loop)
+    const stepSec = dynamicFCData.step_seconds;
+    const nWin = dynamicFCData.n_windows;
+    const totalDur = (nWin - 1) * stepSec;
+    const t = (elapsed % totalDur);
+    const winFloat = t / stepSec;
+    const w0 = Math.floor(winFloat) % nWin;
+    const w1 = (w0 + 1) % nWin;
+    const frac = winFloat - Math.floor(winFloat);
+    corrIntensity = dynamicFCData.corr_signal[w0] * (1 - frac) +
+                    dynamicFCData.corr_signal[w1] * frac;
+    antiIntensity = dynamicFCData.anti_signal[w0] * (1 - frac) +
+                    dynamicFCData.anti_signal[w1] * frac;
+    corrIntensity = 0.08 + 0.92 * corrIntensity;
+    antiIntensity = 0.08 + 0.92 * antiIntensity;
+
+  } else {
+    // Fallback infraslow
+    corrIntensity = infraslowSignal(elapsed, infraslowState.phases);
+    antiIntensity = infraslowSignal(elapsed, infraslowState.antiPhases);
+  }
+
+  const showColors = document.getElementById('show-surface-color').checked;
+
+  // ── Update surface colors: activation map (yellow=ON, blue=OFF) ──
+  // Each vertex's "activation" = its connectivity * the matching network intensity
+  // Positive conn vertices activate with corrIntensity
+  // Negative conn vertices activate with antiIntensity
+  // Then map activation level to: yellow(hot) = active, blue(cold) = inactive
+
+  function activationColor(activation) {
+    // activation in [0, 1]: 0=deep blue, 0.5=dim gray, 1=bright yellow
+    const c = new THREE.Color();
+    if (activation > 0.5) {
+      // 0.5→1.0: gray → yellow → white
+      const t = (activation - 0.5) * 2;
+      c.setRGB(0.4 + 0.6 * t, 0.35 + 0.55 * t, 0.08 + 0.05 * t);
+    } else {
+      // 0→0.5: deep blue → gray
+      const t = activation * 2;
+      c.setRGB(0.05 + 0.35 * t, 0.05 + 0.30 * t, 0.25 + 0.05 * t);
+    }
+    return c;
+  }
+
+  function updateHemiActivation(mesh, hemiData, connectivity) {
+    const faces = hemiData.faces;
+    const sulc = hemiData.sulc;
+    const colorAttr = mesh.geometry.getAttribute('color');
+    const arr = colorAttr.array;
+
+    for (let i = 0; i < faces.length; i++) {
+      for (let j = 0; j < 3; j++) {
+        const vi = faces[i][j];
+        const idx = (i * 3 + j) * 3;
+        const v = connectivity[vi];
+
+        // How active is this vertex right now?
+        let activation;
+        if (v > 0) {
+          activation = v * corrIntensity;
+        } else if (v < 0) {
+          activation = Math.abs(v) * antiIntensity;
+        } else {
+          activation = 0;
+        }
+        activation = Math.min(1, activation);
+
+        // Sulcal shading
+        const sulcVal = sulc ? sulc[vi] || 0 : 0;
+        const sulcShade = 0.7 + 0.3 * (0.5 + 0.5 * Math.tanh(sulcVal * 1.5));
+
+        const c = activationColor(activation);
+        arr[idx]     = c.r * sulcShade;
+        arr[idx + 1] = c.g * sulcShade;
+        arr[idx + 2] = c.b * sulcShade;
+      }
+    }
+    colorAttr.needsUpdate = true;
+  }
+
+  updateHemiActivation(brainMeshL, brainData.brain.left, brainData.brain.left.connectivity);
+  updateHemiActivation(brainMeshR, brainData.brain.right, brainData.brain.right.connectivity);
+
+  // ── Update streamlines: yellow=active, blue=inactive ──
+  streamlineGroups.positive.forEach(line => {
+    line.visible = true;
+    line.material.opacity = (0.15 + 0.85 * corrIntensity) * line.userData.baseOpacity;
+  });
+  streamlineGroups.negative.forEach(line => {
+    line.visible = true;
+    line.material.opacity = (0.15 + 0.85 * antiIntensity) * line.userData.baseOpacity;
+  });
+  (streamlineGroups.background || []).forEach(line => {
+    const bg = 0.7 + 0.3 * Math.max(corrIntensity, antiIntensity);
+    line.material.opacity = line.userData.baseOpacity * bg;
+  });
+
+  // ── MD thalamus: yellow when active ──
+  if (mdMesh) {
+    const mdAct = Math.max(corrIntensity, antiIntensity);
+    mdMesh.material.emissiveIntensity = 0.3 + 0.7 * mdAct;
+    // Yellow when active, teal when lower
+    mdMesh.material.emissive.setRGB(
+      0.1 + 0.8 * mdAct,
+      0.5 + 0.4 * mdAct,
+      0.3 * (1 - mdAct)
+    );
+  }
+
+  // ── Status text ──
+  const statusEl = document.getElementById('status-text');
+  const corrPct = Math.round(corrIntensity * 100);
+  const antiPct = Math.round(antiIntensity * 100);
+  const modeTag = dynamicType === 'simple' ? 'Simple' : 'rs-fMRI';
+  if (corrIntensity > antiIntensity) {
+    statusEl.textContent = `[${modeTag}] Corr ${corrPct}% | Anti ${antiPct}%`;
+    statusEl.style.color = '#ddcc33';
+  } else {
+    statusEl.textContent = `[${modeTag}] Anti ${antiPct}% | Corr ${corrPct}%`;
+    statusEl.style.color = '#5588ff';
+  }
+}
+
+// ─── Camera views ───────────────────────────────────────────────────────────
+window.setView = function(view) {
+  const dist = 240;
+  // fsaverage: x=R(+)/L(-), y=A(+)/P(-), z=S(+)/I(-)
+  const target = new THREE.Vector3(0, -15, 15);
+  let pos;
+  switch(view) {
+    case 'lateral-l': pos = new THREE.Vector3(-dist, -15, 35); break;
+    case 'lateral-r': pos = new THREE.Vector3(dist, -15, 35); break;
+    case 'anterior':  pos = new THREE.Vector3(0, dist, 35); break;
+    case 'posterior': pos = new THREE.Vector3(0, -dist - 30, 35); break;
+    case 'superior':  pos = new THREE.Vector3(5, -20, dist); break;
+    case 'inferior':  pos = new THREE.Vector3(5, -20, -dist + 30); break;
+  }
+  // Animate camera
+  const startPos = camera.position.clone();
+  const startTarget = controls.target.clone();
+  const duration = 800;
+  const startTime = performance.now();
+
+  function animateCamera(now) {
+    const t = Math.min((now - startTime) / duration, 1);
+    const ease = t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2, 3)/2;
+    camera.position.lerpVectors(startPos, pos, ease);
+    controls.target.lerpVectors(startTarget, target, ease);
+    controls.update();
+    if (t < 1) requestAnimationFrame(animateCamera);
+  }
+  requestAnimationFrame(animateCamera);
+};
+
+// ─── Wire up controls ───────────────────────────────────────────────────────
+function setupControls() {
+  // Sliders
+  const sliders = [
+    ['thresh-corr', 'val-corr', v => v.toFixed(2)],
+    ['thresh-anti', 'val-anti', v => (-v).toFixed(2)],
+    ['brain-opacity', 'val-opacity', v => v.toFixed(2)],
+    ['stream-width', 'val-swidth', v => v.toFixed(1)],
+    ['stream-opacity', 'val-sopacity', v => v.toFixed(2)],
+    ['rotate-speed', 'val-rspeed', v => v.toFixed(1)],
+    ['anim-speed', 'val-aspeed', v => v.toFixed(1) + 'x'],
+  ];
+
+  sliders.forEach(([sliderId, valId, fmt]) => {
+    const slider = document.getElementById(sliderId);
+    const valEl = document.getElementById(valId);
+    slider.addEventListener('input', () => {
+      valEl.textContent = fmt(parseFloat(slider.value));
+      onControlChange();
+    });
+  });
+
+  // Checkboxes
+  const checks = ['show-corr','show-anti','show-brain','show-md','show-lesion','show-surface-color','auto-rotate','color-by-bundle'];
+  checks.forEach(id => {
+    document.getElementById(id).addEventListener('change', onControlChange);
+  });
+
+  // Clipping controls
+  document.getElementById('clip-axis').addEventListener('change', updateClipPlane);
+  document.getElementById('clip-pos').addEventListener('input', updateClipPlane);
+  document.getElementById('clip-flip').addEventListener('change', updateClipPlane);
+}
+
+function onControlChange() {
+  // Brain opacity — toggle depthWrite for proper transparency at low values
+  const brainOp = parseFloat(document.getElementById('brain-opacity').value);
+  if (brainMeshL) {
+    brainMeshL.material.opacity = brainOp;
+    brainMeshL.material.depthWrite = brainOp > 0.7;
+    brainMeshL.material.side = brainOp > 0.7 ? THREE.FrontSide : THREE.DoubleSide;
+  }
+  if (brainMeshR) {
+    brainMeshR.material.opacity = brainOp;
+    brainMeshR.material.depthWrite = brainOp > 0.7;
+    brainMeshR.material.side = brainOp > 0.7 ? THREE.FrontSide : THREE.DoubleSide;
+  }
+
+  // Brain visibility
+  const showBrain = document.getElementById('show-brain').checked;
+  if (brainMeshL) brainMeshL.visible = showBrain;
+  if (brainMeshR) brainMeshR.visible = showBrain;
+
+  // Surface coloring
+  const showColors = document.getElementById('show-surface-color').checked;
+  if (brainData && !dynamicMode) {
+    updateBrainColors(brainMeshL, brainData.brain.left, brainData.brain.left.connectivity, showColors);
+    updateBrainColors(brainMeshR, brainData.brain.right, brainData.brain.right.connectivity, showColors);
+  }
+
+  // Bundle color toggle — rebuild streamlines if changed
+  const newColorByBundle = document.getElementById('color-by-bundle').checked;
+  if (newColorByBundle !== colorByBundle && brainData) {
+    colorByBundle = newColorByBundle;
+    // Remove old streamlines
+    const oldGroup = scene.getObjectByName('streamlines');
+    if (oldGroup) scene.remove(oldGroup);
+    streamlineGroups = { positive: [], negative: [], background: [] };
+    // Rebuild
+    const newGroup = buildStreamlines(brainData.streamlines);
+    scene.add(newGroup);
+  }
+
+  // MD and lesion
+  if (mdMesh) mdMesh.visible = document.getElementById('show-md').checked;
+  if (lesionMesh) lesionMesh.visible = document.getElementById('show-lesion').checked;
+
+  // Rotation
+  controls.autoRotate = document.getElementById('auto-rotate').checked;
+  controls.autoRotateSpeed = parseFloat(document.getElementById('rotate-speed').value);
+
+  // Streamlines
+  updateStreamlineVisibility();
+}
+
+// ─── Animation loop ─────────────────────────────────────────────────────────
+let lastFrameTime = performance.now();
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  const now = performance.now();
+  const dt = (now - lastFrameTime) / 1000;
+  lastFrameTime = now;
+
+  try {
+    controls.update();
+    updateDynamic();
+
+    // Pulse lesion
+    if (lesionMesh && lesionMesh.visible) {
+      const t = now / 1000;
+      lesionMesh.material.opacity = 0.3 + 0.15 * Math.sin(t * 2);
+      if (lesionMesh.children[0]) {
+        lesionMesh.children[0].material.opacity = 0.2 + 0.1 * Math.sin(t * 2 + 1);
+      }
+    }
+
+    if (composer) {
+      composer.render();
+    } else {
+      renderer.render(scene, camera);
+    }
+
+    // FPS counter
+    fpsFrames++;
+    fpsTime += dt;
+    if (fpsTime >= 1) {
+      document.getElementById('stat-fps').textContent = Math.round(fpsFrames / fpsTime);
+      fpsFrames = 0; fpsTime = 0;
+    }
+  } catch(e) {
+    console.error('Animate error:', e);
+  }
+}
+
+// ─── Main ───────────────────────────────────────────────────────────────────
+async function main() {
+  initScene();
+  setupControls();
+
+  try {
+    const [data] = await Promise.all([loadData(), loadDynamicFC()]);
+    buildScene(data);
+    const fcStatus = dynamicFCData ? 'real fMRI FC' : 'infraslow sim';
+    document.getElementById('status-text').textContent = `Ready (${fcStatus})`;
+  } catch (err) {
+    document.getElementById('status-text').textContent = 'Error loading data';
+    console.error(err);
+  }
+
+  document.getElementById('loading').classList.add('hidden');
+  animate();
+}
+
+main();
+</script>
+</body>
+</html>
