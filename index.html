@@ -973,15 +973,15 @@ function buildScene(data) {
   const nameCanvas = document.createElement('canvas');
   nameCanvas.width = 512; nameCanvas.height = 64;
   const nctx = nameCanvas.getContext('2d');
-  nctx.font = 'Bold 36px Segoe UI, sans-serif';
+  nctx.font = 'Bold 26px Segoe UI, sans-serif';
   nctx.textAlign = 'center';
   nctx.fillStyle = '#d0d0e8';
-  nctx.fillText('Yaser SG', 256, 42);
+  nctx.fillText('Yaser SG', 256, 38);
   const nameTex = new THREE.CanvasTexture(nameCanvas);
   const nameMat = new THREE.SpriteMaterial({ map: nameTex, transparent: true, depthWrite: false, depthTest: false });
   const nameSprite = new THREE.Sprite(nameMat);
-  nameSprite.scale.set(60, 7.5, 1);
-  nameSprite.position.set(0, -15, 85); // centered above the brain
+  nameSprite.scale.set(45, 5.5, 1);
+  nameSprite.position.set(55, -15, 80); // right side, above brain
   scene.add(nameSprite);
 
   // Update stats
