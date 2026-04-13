@@ -35,6 +35,18 @@
     margin-left: auto;
     font-size: 11px; color: #5a8; font-family: monospace;
   }
+  #topbar .fullscreen-btn {
+    background: none; border: 1px solid #3a3a65; color: #a0a0c0;
+    border-radius: 4px; padding: 2px 8px; cursor: pointer; font-size: 13px;
+    margin-left: 8px;
+  }
+  #topbar .fullscreen-btn:hover { background: #2a2a55; color: #e0e0f0; }
+
+  /* Fullscreen mode: hide sidebar & topbar */
+  body.fullscreen #sidebar { display: none; }
+  body.fullscreen #topbar { opacity: 0; transition: opacity 0.3s; }
+  body.fullscreen #topbar:hover { opacity: 1; }
+  body.fullscreen #canvas-container { right: 0; top: 0; }
 
   /* ─── Canvas ───────────────────────────────────────────────── */
   #canvas-container {
@@ -186,6 +198,7 @@
   <span class="title">Lesion Network Map Viewer</span>
   <span class="subtitle">Connectivity to Mediodorsal Thalamus (MD)</span>
   <span class="status" id="status-text">Loading...</span>
+  <button class="fullscreen-btn" id="btn-fullscreen" onclick="toggleFullscreen()" title="Fullscreen (F)">&#x26F6;</button>
 </div>
 
 <!-- Three.js canvas -->
@@ -469,9 +482,13 @@ function updateClipPlane() {
 
   if (axis === 'none') {
     clipEnabled = false;
-    // Remove clipping from all brain materials
     [brainMeshL, brainMeshR].forEach(m => {
       if (m) m.material.clippingPlanes = [];
+    });
+    const allTracts = [...streamlineGroups.positive, ...streamlineGroups.negative,
+                       ...(streamlineGroups.background || [])];
+    allTracts.forEach(t => {
+      if (t && t.material) t.material.clippingPlanes = [];
     });
     return;
   }
@@ -494,13 +511,19 @@ function updateClipPlane() {
     clipPlane.constant = -offset * dir;
   }
 
-  // Apply clipping to brain meshes
+  // Apply clipping to brain meshes and streamline tubes
   [brainMeshL, brainMeshR].forEach(m => {
     if (m) {
       m.material.clippingPlanes = [clipPlane];
       m.material.clipShadows = true;
-      m.material.side = THREE.DoubleSide; // show interior face
+      m.material.side = THREE.DoubleSide;
     }
+  });
+  // Clip streamline tubes too
+  const allTracts = [...streamlineGroups.positive, ...streamlineGroups.negative,
+                     ...(streamlineGroups.background || [])];
+  allTracts.forEach(t => {
+    if (t && t.material) t.material.clippingPlanes = [clipPlane];
   });
 
   document.getElementById('val-clip').textContent = offset.toFixed(0) + 'mm';
@@ -529,6 +552,38 @@ window.setClipPreset = function(preset) {
   const side = preset === 'medial-l' ? 1 : -1;
   window.setView(preset === 'medial-l' ? 'lateral-r' : 'lateral-l');
 };
+
+// ─── Fullscreen toggle ─────────────────────────────────────────────────────
+window.toggleFullscreen = function() {
+  if (!document.fullscreenElement) {
+    // Enter true browser fullscreen + hide UI
+    document.documentElement.requestFullscreen().catch(() => {});
+    document.body.classList.add('fullscreen');
+    document.getElementById('btn-fullscreen').textContent = '⛶';
+  } else {
+    document.exitFullscreen().catch(() => {});
+    document.body.classList.remove('fullscreen');
+    document.getElementById('btn-fullscreen').textContent = '⛶';
+  }
+  // Trigger resize after transition
+  setTimeout(() => {
+    window.dispatchEvent(new Event('resize'));
+  }, 100);
+};
+
+// Keyboard shortcut: F for fullscreen
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'f' || e.key === 'F') {
+    if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'SELECT') {
+      toggleFullscreen();
+    }
+  }
+  // Escape exits fullscreen UI mode
+  if (e.key === 'Escape' && document.body.classList.contains('fullscreen')) {
+    document.body.classList.remove('fullscreen');
+    setTimeout(() => window.dispatchEvent(new Event('resize')), 100);
+  }
+});
 
 // ─── Scene setup ────────────────────────────────────────────────────────────
 function getContainerSize() {
@@ -724,10 +779,13 @@ function updateBrainColors(mesh, hemiData, connectivity, showColors) {
   colorAttr.needsUpdate = true;
 }
 
-// ─── Build streamlines ──────────────────────────────────────────────────────
+// ─── Build streamlines (DTI-style tubes) ───────────────────────────────────
 function buildStreamlines(streamlinesData) {
   const group = new THREE.Group();
   group.name = 'streamlines';
+
+  // Tube radius from slider
+  const tubeRadius = parseFloat(document.getElementById('stream-width').value) * 0.15;
 
   streamlinesData.forEach((sl) => {
     const strength = sl.strength;
@@ -749,45 +807,64 @@ function buildStreamlines(streamlinesData) {
 
     // Smooth CatmullRom curve from real tractography waypoints
     const waypoints = sl.points.map(p => new THREE.Vector3(p[0], p[1], p[2]));
-    const nSamples = Math.min(50, Math.max(20, waypoints.length * 3));
     const curve = new THREE.CatmullRomCurve3(waypoints, false, 'catmullrom', 0.4);
-    const curvePoints = curve.getPoints(nSamples);
-    const geo = new THREE.BufferGeometry().setFromPoints(curvePoints);
 
-    // Color along the streamline
-    const vertColors = new Float32Array(curvePoints.length * 3);
-    for (let i = 0; i < curvePoints.length; i++) {
-      const t = i / (curvePoints.length - 1);
+    // DTI-style: 3D tube with lighting instead of flat line
+    const radius = isStrong ? tubeRadius : tubeRadius * 0.5;
+    const tubeSeg = 30; // segments along curve
+    const radSeg = 4;   // radial segments (low for performance)
+    const geo = new THREE.TubeGeometry(curve, tubeSeg, radius, radSeg, false);
+
+    // Vertex colors: DTI-style directional coloring along the tube
+    const posAttr = geo.getAttribute('position');
+    const vertColors = new Float32Array(posAttr.count * 3);
+    const tempPt = new THREE.Vector3();
+
+    for (let i = 0; i < posAttr.count; i++) {
+      tempPt.set(posAttr.getX(i), posAttr.getY(i), posAttr.getZ(i));
+      // Approximate t parameter from position along the curve
+      const t = curve.getUtoTmapping(0, 0); // fallback
+      // Use a gradient based on position along curve length
+      const proj = curve.getPointAt(0);
+      const projEnd = curve.getPointAt(1);
+      const totalLen = proj.distanceTo(projEnd);
+      const fromStart = tempPt.distanceTo(proj);
+      const tApprox = Math.min(1, fromStart / (totalLen + 0.01));
+
       const intensity = isStrong
-        ? 0.5 + 0.5 * (1 - t * t)
-        : 0.6 + 0.2 * Math.sin(t * Math.PI);
+        ? 0.55 + 0.45 * (1 - tApprox * tApprox)
+        : 0.6 + 0.2 * Math.sin(tApprox * Math.PI);
       vertColors[i*3]   = color.r * intensity;
       vertColors[i*3+1] = color.g * intensity;
       vertColors[i*3+2] = color.b * intensity;
     }
     geo.setAttribute('color', new THREE.BufferAttribute(vertColors, 3));
 
-    const mat = new THREE.LineBasicMaterial({
+    const mat = new THREE.MeshPhongMaterial({
       vertexColors: true,
       transparent: true,
-      opacity: isStrong ? 0.7 : 0.18,
-      linewidth: 1,
+      opacity: isStrong ? 0.85 : 0.25,
+      shininess: 20,
+      specular: new THREE.Color(0x222233),
+      side: THREE.FrontSide,
     });
 
-    const line = new THREE.Line(geo, mat);
-    line.userData = { strength, isPositive, isStrong, bundle,
-                      baseOpacity: isStrong ? 0.7 : 0.18 };
-    group.add(line);
+    const tube = new THREE.Mesh(geo, mat);
+    tube.userData = { strength, isPositive, isStrong, bundle,
+                      baseOpacity: isStrong ? 0.85 : 0.25 };
+    // Apply clipping if active
+    if (clipEnabled) mat.clippingPlanes = [clipPlane];
+    group.add(tube);
 
     if (isStrong) {
       if (isPositive) {
-        streamlineGroups.positive.push(line);
+        streamlineGroups.positive.push(tube);
       } else {
-        streamlineGroups.negative.push(line);
+        streamlineGroups.negative.push(tube);
       }
     } else {
       streamlineGroups.background = streamlineGroups.background || [];
-      streamlineGroups.background.push(line);
+      streamlineGroups.background.push(tube);
     }
   });
 
