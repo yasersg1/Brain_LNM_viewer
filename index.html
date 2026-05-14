@@ -1047,9 +1047,10 @@ function updateStreamlineVisibility() {
     if (visible) negCount++;
   });
 
-  // Background tracts: hidden in glass brain mode (only show filtered fibers)
+  // Background tracts: hidden when filter is active or glass brain mode
   (streamlineGroups.background || []).forEach(line => {
-    line.visible = !glassBrain && (showCorr || showAnti);
+    const hideByFilter = fiberFilterPct > 0;
+    line.visible = !glassBrain && !hideByFilter && (showCorr || showAnti);
     line.material.opacity = opacity * 0.25;
   });
 
