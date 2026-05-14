@@ -245,6 +245,11 @@
       <input type="range" class="slider-neutral" id="stream-opacity" min="0" max="1" step="0.01" value="0.75">
       <span class="value" id="val-sopacity">0.75</span>
     </div>
+    <div class="control-row">
+      <label style="font-size:11px">Fiber Filter |t|</label>
+      <input type="range" class="slider-neutral" id="fiber-filter" min="0" max="1" step="0.01" value="0">
+      <span class="value" id="val-ffilter">0</span>
+    </div>
     <div class="toggle-row">
       <input type="checkbox" id="show-corr" checked>
       <label for="show-corr">Show correlations (warm)</label>
@@ -252,6 +257,10 @@
     <div class="toggle-row">
       <input type="checkbox" id="show-anti" checked>
       <label for="show-anti">Show anticorrelations (cold)</label>
+    </div>
+    <div class="toggle-row">
+      <input type="checkbox" id="glass-brain">
+      <label for="glass-brain">Glass brain (Lead-DBS style)</label>
     </div>
     <div class="toggle-row">
       <input type="checkbox" id="show-brain" checked>
@@ -1000,28 +1009,45 @@ function updateStreamlineVisibility() {
   const showCorr = document.getElementById('show-corr').checked;
   const showAnti = document.getElementById('show-anti').checked;
   const opacity = parseFloat(document.getElementById('stream-opacity').value);
+  const fiberFilter = parseFloat(document.getElementById('fiber-filter').value);
+  const glassBrain = document.getElementById('glass-brain').checked;
 
   let posCount = 0, negCount = 0;
 
+  // Fiber filtering (Hollunder 2024 style): hide fibers below |t| threshold
+  // In glass brain mode, make surviving fibers more opaque and vivid
   streamlineGroups.positive.forEach(line => {
     const s = line.userData.strength;
-    const visible = showCorr && s >= corrThresh;
+    const absS = Math.abs(s);
+    const passesFilter = absS >= fiberFilter;
+    const visible = showCorr && s >= corrThresh && passesFilter;
     line.visible = visible;
-    line.material.opacity = opacity * Math.min(1, Math.abs(s) * 2);
+    if (glassBrain) {
+      // Lead-DBS style: strong opacity, scale by |t|
+      line.material.opacity = visible ? opacity * (0.5 + 0.5 * Math.min(1, absS * 2)) : 0;
+    } else {
+      line.material.opacity = opacity * Math.min(1, absS * 2);
+    }
     if (visible) posCount++;
   });
 
   streamlineGroups.negative.forEach(line => {
     const s = line.userData.strength;
-    const visible = showAnti && Math.abs(s) >= antiThresh;
+    const absS = Math.abs(s);
+    const passesFilter = absS >= fiberFilter;
+    const visible = showAnti && absS >= antiThresh && passesFilter;
     line.visible = visible;
-    line.material.opacity = opacity * Math.min(1, Math.abs(s) * 2);
+    if (glassBrain) {
+      line.material.opacity = visible ? opacity * (0.5 + 0.5 * Math.min(1, absS * 2)) : 0;
+    } else {
+      line.material.opacity = opacity * Math.min(1, absS * 2);
+    }
     if (visible) negCount++;
   });
 
-  // Background tracts: always visible at low opacity
+  // Background tracts: hidden in glass brain mode (only show filtered fibers)
   (streamlineGroups.background || []).forEach(line => {
-    line.visible = showCorr || showAnti;
+    line.visible = !glassBrain && (showCorr || showAnti);
     line.material.opacity = opacity * 0.25;
   });
 
@@ -1307,6 +1333,7 @@ function setupControls() {
     ['brain-opacity', 'val-opacity', v => v.toFixed(2)],
     ['stream-width', 'val-swidth', v => v.toFixed(1)],
     ['stream-opacity', 'val-sopacity', v => v.toFixed(2)],
+    ['fiber-filter', 'val-ffilter', v => v.toFixed(2)],
     ['rotate-speed', 'val-rspeed', v => v.toFixed(1)],
     ['anim-speed', 'val-aspeed', v => v.toFixed(1) + 'x'],
   ];
@@ -1321,7 +1348,7 @@ function setupControls() {
   });
 
   // Checkboxes
-  const checks = ['show-corr','show-anti','show-brain','show-md','show-lesion','show-surface-color','auto-rotate','color-by-bundle'];
+  const checks = ['show-corr','show-anti','show-brain','show-md','show-lesion','show-surface-color','auto-rotate','color-by-bundle','glass-brain'];
   checks.forEach(id => {
     document.getElementById(id).addEventListener('change', onControlChange);
   });
@@ -1369,6 +1396,37 @@ function onControlChange() {
     // Rebuild
     const newGroup = buildStreamlines(brainData.streamlines);
     scene.add(newGroup);
+  }
+
+  // Glass brain mode (Lead-DBS style)
+  const glassBrain = document.getElementById('glass-brain').checked;
+  if (brainMeshL) {
+    if (glassBrain) {
+      brainMeshL.material.opacity = 0.12;
+      brainMeshL.material.depthWrite = false;
+      brainMeshL.material.side = THREE.DoubleSide;
+      brainMeshL.material.shininess = 60;
+      brainMeshL.material.specular.set(0x556688);
+      brainMeshL.material.transparent = true;
+    } else {
+      brainMeshL.material.opacity = brainOp;
+      brainMeshL.material.shininess = 25;
+      brainMeshL.material.specular.set(0x444455);
+    }
+  }
+  if (brainMeshR) {
+    if (glassBrain) {
+      brainMeshR.material.opacity = 0.12;
+      brainMeshR.material.depthWrite = false;
+      brainMeshR.material.side = THREE.DoubleSide;
+      brainMeshR.material.shininess = 60;
+      brainMeshR.material.specular.set(0x556688);
+      brainMeshR.material.transparent = true;
+    } else {
+      brainMeshR.material.opacity = brainOp;
+      brainMeshR.material.shininess = 25;
+      brainMeshR.material.specular.set(0x444455);
+    }
   }
 
   // MD and lesion
