@@ -247,8 +247,8 @@
     </div>
     <div class="control-row">
       <label style="font-size:11px">Fiber Filter</label>
-      <input type="range" class="slider-neutral" id="fiber-filter" min="0" max="30" step="0.5" value="0">
-      <span class="value" id="val-ffilter">t>0</span>
+      <input type="range" class="slider-neutral" id="fiber-filter" min="0" max="0.5" step="0.01" value="0">
+      <span class="value" id="val-ffilter">off</span>
     </div>
     <div class="toggle-row">
       <input type="checkbox" id="show-corr" checked>
@@ -357,18 +357,14 @@
     <div class="legend-item"><div class="legend-dot" style="background:#33eebb"></div> MD Thalamus (peak)</div>
   </div>
 
-  <!-- Legend: AAN bundle colors -->
+  <!-- Legend: Fiber filtering -->
   <div class="panel-section" id="legend-bundles">
-    <h3>AAN Bundles</h3>
-    <div class="legend-item"><div class="legend-dot" style="background:#f27333"></div> CT — Corticothalamic</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#e62626"></div> CTT — Central Tegmental</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#33bf66"></div> AR — Anterior Radiation</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#b333cc"></div> ML — Medial Lemniscus</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#ccb326"></div> MLF — Medial Long. Fasc.</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#3388e6"></div> STT — Spinothalamic</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#33cccc"></div> CB — Cingulum</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#8c8c8c"></div> CST — Corticospinal</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#e680b3"></div> F — Fornix</div>
+    <h3>Fiber Filtering (n=124)</h3>
+    <div class="legend-item"><div class="legend-dot" style="background:linear-gradient(to right,#802010,#ffe010); width:40px; border-radius:3px; height:10px;"></div> R>0: disconn. predicts hypersomnia</div>
+    <div class="legend-item"><div class="legend-dot" style="background:linear-gradient(to right,#001880,#10e070); width:40px; border-radius:3px; height:10px;"></div> R<0: disconn. predicts insomnia</div>
+    <div class="info-text" style="margin-top:6px; font-size:10px;">
+      Spearman R between lesion-fiber disconnection and phenotype across 101 hypersomnia + 23 insomnia stroke patients. p&lt;0.05 uncorrected.
+    </div>
   </div>
 
   <!-- Stats -->
@@ -1009,22 +1005,16 @@ function updateStreamlineVisibility() {
   const showCorr = document.getElementById('show-corr').checked;
   const showAnti = document.getElementById('show-anti').checked;
   const opacity = parseFloat(document.getElementById('stream-opacity').value);
-  const fiberFilterT = parseFloat(document.getElementById('fiber-filter').value);
+  const fiberFilterR = parseFloat(document.getElementById('fiber-filter').value);
   const glassBrain = document.getElementById('glass-brain').checked;
-
-  // Convert t-value threshold to normalized scale using caps from metadata
-  const posCap = brainData && brainData.metadata ? (brainData.metadata.pos_cap || 30.59) : 30.59;
-  const negCap = brainData && brainData.metadata ? (brainData.metadata.neg_cap || 15.71) : 15.71;
 
   let posCount = 0, negCount = 0;
 
-  // Fiber filtering: slider is in t-value units
+  // Fiber filtering: slider is in |R| (Spearman) units
   streamlineGroups.positive.forEach(line => {
     const s = line.userData.strength;
     const absS = Math.abs(s);
-    // Convert: normalized strength * cap = original t-value
-    const tValue = absS * posCap;
-    const passesFilter = tValue >= fiberFilterT;
+    const passesFilter = absS >= fiberFilterR;
     const visible = showCorr && s >= corrThresh && passesFilter;
     line.visible = visible;
     if (glassBrain) {
@@ -1039,8 +1029,7 @@ function updateStreamlineVisibility() {
   streamlineGroups.negative.forEach(line => {
     const s = line.userData.strength;
     const absS = Math.abs(s);
-    const tValue = absS * negCap;
-    const passesFilter = tValue >= fiberFilterT;
+    const passesFilter = absS >= fiberFilterR;
     const visible = showAnti && absS >= antiThresh && passesFilter;
     line.visible = visible;
     if (glassBrain) {
@@ -1339,7 +1328,7 @@ function setupControls() {
     ['brain-opacity', 'val-opacity', v => v.toFixed(2)],
     ['stream-width', 'val-swidth', v => v.toFixed(1)],
     ['stream-opacity', 'val-sopacity', v => v.toFixed(2)],
-    ['fiber-filter', 'val-ffilter', v => v > 0 ? '|t|>' + v.toFixed(1) : 'off'],
+    ['fiber-filter', 'val-ffilter', v => v > 0 ? '|R|>' + v.toFixed(2) : 'off'],
     ['rotate-speed', 'val-rspeed', v => v.toFixed(1)],
     ['anim-speed', 'val-aspeed', v => v.toFixed(1) + 'x'],
   ];
