@@ -246,8 +246,8 @@
       <span class="value" id="val-sopacity">0.75</span>
     </div>
     <div class="control-row">
-      <label style="font-size:11px">Fiber Filter</label>
-      <input type="range" class="slider-neutral" id="fiber-filter" min="0" max="0.5" step="0.01" value="0">
+      <label style="font-size:11px">Overlap %</label>
+      <input type="range" class="slider-neutral" id="fiber-filter" min="0" max="40" step="1" value="0">
       <span class="value" id="val-ffilter">off</span>
     </div>
     <div class="toggle-row">
@@ -357,14 +357,18 @@
     <div class="legend-item"><div class="legend-dot" style="background:#33eebb"></div> MD Thalamus (peak)</div>
   </div>
 
-  <!-- Legend: Fiber filtering -->
+  <!-- Legend: Sensitivity analysis -->
   <div class="panel-section" id="legend-bundles">
-    <h3>Fiber Filtering (n=124)</h3>
-    <div class="legend-item"><div class="legend-dot" style="background:linear-gradient(to right,#802010,#ffe010); width:40px; border-radius:3px; height:10px;"></div> R>0: disconn. predicts hypersomnia</div>
-    <div class="legend-item"><div class="legend-dot" style="background:linear-gradient(to right,#001880,#10e070); width:40px; border-radius:3px; height:10px;"></div> R<0: disconn. predicts insomnia</div>
+    <h3>Structural Sensitivity (n=124)</h3>
+    <div class="legend-item"><div class="legend-dot" style="background:linear-gradient(to right,#802010,#ffe010); width:40px; border-radius:3px; height:10px;"></div> Low → high % overlap</div>
     <div class="info-text" style="margin-top:6px; font-size:10px;">
-      Spearman R between lesion-fiber disconnection and phenotype across 101 hypersomnia + 23 insomnia stroke patients. p&lt;0.05 uncorrected.
+      Each fiber colored by % of 124 sleep dysregulation stroke lesions that disconnect it. Slider filters by overlap threshold.
+      Brighter = more lesions share this disconnection.
     </div>
+    <div class="stat-row" style="margin-top:4px"><span class="stat-label">Peak overlap</span><span class="stat-val positive">39.5%</span></div>
+    <div class="stat-row"><span class="stat-label">>30% overlap</span><span class="stat-val">28 fibers</span></div>
+    <div class="stat-row"><span class="stat-label">>20% overlap</span><span class="stat-val">265 fibers</span></div>
+    <div class="stat-row"><span class="stat-label">>10% overlap</span><span class="stat-val">904 fibers</span></div>
   </div>
 
   <!-- Stats -->
@@ -1005,16 +1009,18 @@ function updateStreamlineVisibility() {
   const showCorr = document.getElementById('show-corr').checked;
   const showAnti = document.getElementById('show-anti').checked;
   const opacity = parseFloat(document.getElementById('stream-opacity').value);
-  const fiberFilterR = parseFloat(document.getElementById('fiber-filter').value);
+  const fiberFilterPct = parseFloat(document.getElementById('fiber-filter').value);
   const glassBrain = document.getElementById('glass-brain').checked;
 
   let posCount = 0, negCount = 0;
 
-  // Fiber filtering: slider is in |R| (Spearman) units
+  // Fiber filtering: slider is in % overlap (sensitivity analysis)
+  // strength is overlap/100 (signed by LNM), so |strength|*100 = overlap %
   streamlineGroups.positive.forEach(line => {
     const s = line.userData.strength;
     const absS = Math.abs(s);
-    const passesFilter = absS >= fiberFilterR;
+    const overlapPct = absS * 100;
+    const passesFilter = overlapPct >= fiberFilterPct;
     const visible = showCorr && s >= corrThresh && passesFilter;
     line.visible = visible;
     if (glassBrain) {
@@ -1029,7 +1035,8 @@ function updateStreamlineVisibility() {
   streamlineGroups.negative.forEach(line => {
     const s = line.userData.strength;
     const absS = Math.abs(s);
-    const passesFilter = absS >= fiberFilterR;
+    const overlapPct = absS * 100;
+    const passesFilter = overlapPct >= fiberFilterPct;
     const visible = showAnti && absS >= antiThresh && passesFilter;
     line.visible = visible;
     if (glassBrain) {
@@ -1328,7 +1335,7 @@ function setupControls() {
     ['brain-opacity', 'val-opacity', v => v.toFixed(2)],
     ['stream-width', 'val-swidth', v => v.toFixed(1)],
     ['stream-opacity', 'val-sopacity', v => v.toFixed(2)],
-    ['fiber-filter', 'val-ffilter', v => v > 0 ? '|R|>' + v.toFixed(2) : 'off'],
+    ['fiber-filter', 'val-ffilter', v => v > 0 ? '>' + v.toFixed(0) + '%' : 'off'],
     ['rotate-speed', 'val-rspeed', v => v.toFixed(1)],
     ['anim-speed', 'val-aspeed', v => v.toFixed(1) + 'x'],
   ];
