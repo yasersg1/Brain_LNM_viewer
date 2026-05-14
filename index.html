@@ -246,9 +246,9 @@
       <span class="value" id="val-sopacity">0.75</span>
     </div>
     <div class="control-row">
-      <label style="font-size:11px">Fiber Filter |t|</label>
-      <input type="range" class="slider-neutral" id="fiber-filter" min="0" max="1" step="0.01" value="0">
-      <span class="value" id="val-ffilter">0</span>
+      <label style="font-size:11px">Fiber Filter</label>
+      <input type="range" class="slider-neutral" id="fiber-filter" min="0" max="30" step="0.5" value="0">
+      <span class="value" id="val-ffilter">t>0</span>
     </div>
     <div class="toggle-row">
       <input type="checkbox" id="show-corr" checked>
@@ -1009,17 +1009,22 @@ function updateStreamlineVisibility() {
   const showCorr = document.getElementById('show-corr').checked;
   const showAnti = document.getElementById('show-anti').checked;
   const opacity = parseFloat(document.getElementById('stream-opacity').value);
-  const fiberFilter = parseFloat(document.getElementById('fiber-filter').value);
+  const fiberFilterT = parseFloat(document.getElementById('fiber-filter').value);
   const glassBrain = document.getElementById('glass-brain').checked;
+
+  // Convert t-value threshold to normalized scale using caps from metadata
+  const posCap = brainData && brainData.metadata ? (brainData.metadata.pos_cap || 30.59) : 30.59;
+  const negCap = brainData && brainData.metadata ? (brainData.metadata.neg_cap || 15.71) : 15.71;
 
   let posCount = 0, negCount = 0;
 
-  // Fiber filtering (Hollunder 2024 style): hide fibers below |t| threshold
-  // In glass brain mode, make surviving fibers more opaque and vivid
+  // Fiber filtering: slider is in t-value units
   streamlineGroups.positive.forEach(line => {
     const s = line.userData.strength;
     const absS = Math.abs(s);
-    const passesFilter = absS >= fiberFilter;
+    // Convert: normalized strength * cap = original t-value
+    const tValue = absS * posCap;
+    const passesFilter = tValue >= fiberFilterT;
     const visible = showCorr && s >= corrThresh && passesFilter;
     line.visible = visible;
     if (glassBrain) {
@@ -1034,7 +1039,8 @@ function updateStreamlineVisibility() {
   streamlineGroups.negative.forEach(line => {
     const s = line.userData.strength;
     const absS = Math.abs(s);
-    const passesFilter = absS >= fiberFilter;
+    const tValue = absS * negCap;
+    const passesFilter = tValue >= fiberFilterT;
     const visible = showAnti && absS >= antiThresh && passesFilter;
     line.visible = visible;
     if (glassBrain) {
@@ -1333,7 +1339,7 @@ function setupControls() {
     ['brain-opacity', 'val-opacity', v => v.toFixed(2)],
     ['stream-width', 'val-swidth', v => v.toFixed(1)],
     ['stream-opacity', 'val-sopacity', v => v.toFixed(2)],
-    ['fiber-filter', 'val-ffilter', v => v.toFixed(2)],
+    ['fiber-filter', 'val-ffilter', v => v > 0 ? '|t|>' + v.toFixed(1) : 'off'],
     ['rotate-speed', 'val-rspeed', v => v.toFixed(1)],
     ['anim-speed', 'val-aspeed', v => v.toFixed(1) + 'x'],
   ];
