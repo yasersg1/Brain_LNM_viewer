@@ -954,7 +954,7 @@ function createTextSprite(text, color) {
 
 // ─── Load and build scene ───────────────────────────────────────────────────
 async function loadData() {
-  const resp = await fetch('data/brain_data.json');
+  const resp = await fetch('data/brain_data.json?v=' + Date.now());
   brainData = await resp.json();
   return brainData;
 }
@@ -1070,7 +1070,7 @@ let dynamicFCData = null;
 
 async function loadDynamicFC() {
   try {
-    const resp = await fetch('data/dynamic_fc.json');
+    const resp = await fetch('data/dynamic_fc.json?v=' + Date.now());
     dynamicFCData = await resp.json();
     console.log('Dynamic FC loaded:', dynamicFCData.n_windows, 'windows');
   } catch(e) {
